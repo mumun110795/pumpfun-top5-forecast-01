@@ -35,6 +35,10 @@ task.json, so the same code serves the 2-hour practice and the 24-hour final):
 
 Deterministic: fixed seed, sorted iteration everywhere, floored 6-decimal
 probabilities, so two runs on the same history are byte-identical.
+
+Robustness: history rows are validated at load time (see row_usable); a row
+whose fields cannot be parsed downstream is skipped instead of crashing the
+whole run on the final's much longer history.
 """
 
 import json
@@ -65,6 +69,25 @@ def floor6(x):
     return math.floor(x * MICRO) / MICRO
 
 
+def row_usable(r):
+    """True when a history row carries every field the model parses, in a
+    parseable form: a positive integer market cap (log10 is taken of it), a
+    rank of at least 1, a mint, and a created_at timestamp that parses.
+    Anything else is dropped at load time so one malformed row in a long
+    history cannot abort the run and forfeit the forecast entirely."""
+    try:
+        if int(r["market_cap_lamports"]) <= 0:
+            return False
+        if int(r["rank"]) < 1:
+            return False
+        if not r["mint"]:
+            return False
+        parse_ts(r["created_at"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return True
+
+
 def main():
     with open(os.path.join(INPUT_DIR, "task.json"), "r", encoding="utf-8") as f:
         task = json.load(f)
@@ -82,7 +105,9 @@ def main():
                 continue
             m = json.loads(line)
             if m.get("ok") is True and isinstance(m.get("rows"), list) and m["rows"]:
-                marks.append(m)
+                m["rows"] = [r for r in m["rows"] if row_usable(r)]
+                if m["rows"]:
+                    marks.append(m)
     if not marks:
         raise SystemExit("history holds no usable mark")
     marks.sort(key=lambda m: m["at"])
