@@ -24,9 +24,17 @@ task.json, so the same code serves the 2-hour practice and the 24-hour final):
   * Coins born after the cut (and risers never ranked in recent marks) are
     modelled as a Poisson stream of newcomers whose sizes are drawn around
     the current leaders' sizes; in the rehearsal 3 of the 9 distinct top-5
-    coins across the answer reads were not in the history at all, so every
-    place also keeps a modest explicit unnamed reserve on top of the
-    simulated newcomer mass.
+    coins across the answer reads were not in the history at all. Round-2
+    recalibration on held-out rehearsal slices (every cut/target pair of
+    marks, scored with the official formulas) showed the first version
+    understated this churn: the newcomer arrival rate is raised (base
+    coefficient 3.24/hour before the history-age decay), newcomer sizes are
+    drawn wider (sd 0.60), and every place keeps a larger explicit unnamed
+    reserve (base 0.24, cap 0.40) on top of the simulated newcomer mass.
+    Blending the size distributions toward a static anchor at the last
+    mark's sizes was tested and rejected: it scored worse on every
+    held-out slice, because place sizes themselves move with the flow of
+    new leaders, which the simulation's order statistics already track.
   * Each Monte Carlo replicate first draws one of the seven answer reads
     uniformly (the score is the mean over reads), simulates every candidate's
     size at that horizon plus the newcomers, and ranks them. Place
@@ -196,22 +204,26 @@ def main():
     mean_h = sum(horizons) / len(horizons)
 
     # Newcomer intensity: serious new contenders per hour. The rehearsal's
-    # flow of new coins into the top 200 stayed high (~60-100 per mark); only a
-    # small share can threaten the top 5, and longer histories face more
+    # flow of new coins into the top 200 stayed high (~60-100 per mark), and
+    # held-out slices showed the threat to the top 5 from post-cut births is
+    # larger than a naive rate suggests; the base coefficient (3.24) was
+    # recalibrated on those slices in round 2. Longer histories face more
     # post-cut births but also a more entrenched leader set, so the rate
     # decays with the age of the history.
-    newcomer_rate = 1.35 / (1.0 + 0.35 * max(0.0, history_span_h - 1.0))
+    newcomer_rate = 3.24 / (1.0 + 0.35 * max(0.0, history_span_h - 1.0))
     newcomer_mu = second_size - 0.02 + drift_rate * mean_h * 0.5
-    newcomer_sd = 0.52
+    newcomer_sd = 0.60
 
     # Unnamed reserve per place: share held back for coins outside the
     # candidate set (deep risers) plus a model-error cushion, on top of the
     # simulated post-cut newcomers. Grows with horizon; slightly larger for
-    # lower places (more churn there).
+    # lower places (more churn there). Round-2 held-out calibration raised
+    # the base from 0.08 to 0.24 (named mass per place on the rehearsal now
+    # totals ~0.47-0.51 instead of ~0.65-0.68).
     reserve = []
     for k in range(places):
-        r_k = 0.08 + 0.05 * (1.0 - math.exp(-mean_h / 3.0)) + 0.012 * k
-        reserve.append(min(0.28, r_k))
+        r_k = 0.24 + 0.05 * (1.0 - math.exp(-mean_h / 3.0)) + 0.012 * k
+        reserve.append(min(0.40, r_k))
 
     # ---- per-coin simulation parameters ------------------------------------
     params = []
